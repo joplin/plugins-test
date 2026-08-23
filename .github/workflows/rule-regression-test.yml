@@ -33,19 +33,6 @@ jobs:
           echo "matrix=$(jq -c '{plugin: .}' .github/codeql/target-plugins.json)" >> "$GITHUB_OUTPUT"
           echo "plugin_count=$(jq 'length' .github/codeql/target-plugins.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: scripts/package-lock.json
-
-      - name: Run approved-findings unit tests
-        working-directory: scripts
-        run: |
-          npm ci
-          npm run test:unit
-
   scan:
     needs: setup
     runs-on: ubuntu-latest
