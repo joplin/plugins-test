@@ -25,6 +25,7 @@ The test command runs the CodeQL regression tests in `.github/codeql/tests`.
 <!-- PLUGIN_LIST -->
 | &nbsp; | &nbsp; | Name  | Version | Description | Author |
 | ----- | ----- | ----- | ----- | ----- | ----- |
+| [🏠](https://github.com/akshajrawat/joplin-test-plugin-) | [⬇️](https://github.com/joplin/plugins/raw/master/plugins/com.akshajrawat.final-submission-test/plugin.jpl) | Final Submission Test | 1.0.0 | A simple plugin for demonstrating the complete Joplin plugin submission flow. | Akshaj Rawat |
 | -     | [⬇️](https://github.com/joplin/plugins/raw/master/plugins/com.test4.registeredNameLookup/plugin.jpl) | joplin-plugin-ownership-name-lookup-test | 1.0.0 | Registry-only fixture for testing ownership lookup by plugin name. | tester |
 | -     | [⬇️](https://github.com/joplin/plugins/raw/master/plugins/com.test4.legacyNpmMigration/plugin.jpl) | Legacy NPM Migration Registry Fixture | 1.0.0 | Registry-only fixture for testing migration from legacy NPM publishing. | tester |
 | [🏠](https://github.com/akshajrawat/joplin-test-plugin-) | [⬇️](https://github.com/joplin/plugins/raw/master/plugins/com.test1.normal-plugin-flow/plugin.jpl) | Normal Plugin test flow  | 1.0.1 | This is the test for the happy path for the plugin publish | tester |
