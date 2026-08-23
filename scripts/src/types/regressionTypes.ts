@@ -1,4 +1,4 @@
-export const regressionScanArtifactSchemaVersion = 1;
+export const regressionScanArtifactSchemaVersion = 2;
 
 export interface RegressionFinding {
     ruleId: string;
@@ -12,7 +12,5 @@ export interface RegressionScanArtifact {
     schemaVersion: typeof regressionScanArtifactSchemaVersion;
     plugin: string;
     pluginId: string;
-    repositoryUrl: string;
-    requiringReview: RegressionFinding[];
-    approvedEarlier: RegressionFinding[];
+    findings: RegressionFinding[];
 }

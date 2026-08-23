@@ -84,9 +84,7 @@ jobs:
         env:
           RESULTS_SARIF: ${{ github.workspace }}/codeql-results/javascript.sarif
           PLUGIN_NAME: ${{ matrix.plugin.repo }}
-          PLUGIN_REPOSITORY_URL: https://github.com/${{ matrix.plugin.repo }}
           SOURCE_ROOT: ${{ github.workspace }}/target-plugin
-          REGISTRY_ROOT: ${{ github.workspace }}/plugins-test
         run: node dist/code-scan/regressionScan.js
 
       - name: Upload findings

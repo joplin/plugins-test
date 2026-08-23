@@ -23,9 +23,35 @@ predicate hardcodedCommandValue(DataFlow::Node command, string value) {
   value = command.getALocalSource().getStringValue()
 }
 
+predicate executesArgumentListAsShell(SystemCommandExecution execution) {
+  execution.getOptionsArg()
+      .getALocalSource()
+      .getAPropertyWrite("shell")
+      .getRhs()
+      .asExpr()
+      .(BooleanLiteral)
+      .getBoolValue() = true
+  or
+  exists(API::Node options |
+    options.asSink() = execution.getOptionsArg() and
+    options.getMember("shell").asSink().mayHaveBooleanValue(true)
+  )
+}
+
+predicate isFixedNonShellFileUtility(
+  SystemCommandExecution execution, DataFlow::Node command, string commandValue
+) {
+  command = execution.getACommandArgument() and
+  hardcodedCommandValue(command, commandValue) and
+  commandValue.regexpMatch("(?i)(^|.*[/\\\\])(cp|mv)(\\.exe)?$") and
+  not execution.isShellInterpreted(command) and
+  not executesArgumentListAsShell(execution)
+}
+
 from SystemCommandExecution execution, DataFlow::Node command, string commandValue
 where
   command = execution.getACommandArgument() and
   hardcodedCommandValue(command, commandValue) and
-  not hasCryptominingIndicator(execution)
+  not hasCryptominingIndicator(execution) and
+  not isFixedNonShellFileUtility(execution, command, commandValue)
 select command, "Terminal Command Execution (Hardcoded): A hardcoded operating-system command is executed. Review the command and its arguments to confirm that invoking native processes is required and safe."

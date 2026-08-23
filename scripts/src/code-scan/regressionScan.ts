@@ -7,8 +7,7 @@ import {
     type RegressionScanArtifact,
 } from '../types/regressionTypes';
 import type { SarifReport } from '../types/types';
-import { normalizeRepositoryUrl } from '../utils/payload';
-import { classifyFindings, fingerprintSarifResults, readApprovedBaseline } from './approvedFindings';
+import { assertValidPluginId, fingerprintSarifResults } from './approvedFindings';
 
 const requiredEnvironmentValue = (name: string) => {
     const value = process.env[name];
@@ -42,9 +41,7 @@ export const main = async () => {
     try {
         const resultsSarif = requiredEnvironmentValue('RESULTS_SARIF');
         const pluginName = requiredEnvironmentValue('PLUGIN_NAME');
-        const pluginRepositoryUrl = requiredEnvironmentValue('PLUGIN_REPOSITORY_URL');
         const sourceRoot = requiredEnvironmentValue('SOURCE_ROOT');
-        const registryRoot = requiredEnvironmentValue('REGISTRY_ROOT');
         const report = await parseSarif(resultsSarif);
         const manifestPath = resolve(sourceRoot, 'src', 'manifest.json');
         const manifest: unknown = JSON.parse(await readFile(manifestPath, 'utf8'));
@@ -53,18 +50,18 @@ export const main = async () => {
         }
 
         const pluginId = (manifest as Record<string, unknown>).id;
-        if (typeof pluginId !== 'string' || !pluginId) throw new Error(`Plugin manifest is missing id: ${manifestPath}`);
+        try {
+            assertValidPluginId(pluginId);
+        } catch {
+            throw new Error(`Plugin manifest has an invalid id: ${manifestPath}`);
+        }
 
         const fingerprinted = await fingerprintSarifResults(report, sourceRoot);
-        const baseline = await readApprovedBaseline(registryRoot, pluginId, pluginRepositoryUrl);
-        const { requiringReview, approvedEarlier } = classifyFindings(fingerprinted, baseline);
         const artifact: RegressionScanArtifact = {
             schemaVersion: regressionScanArtifactSchemaVersion,
             plugin: pluginName,
             pluginId,
-            repositoryUrl: normalizeRepositoryUrl(pluginRepositoryUrl),
-            requiringReview: requiringReview.map(regressionFindingFrom),
-            approvedEarlier: approvedEarlier.map(regressionFindingFrom),
+            findings: fingerprinted.map(regressionFindingFrom),
         };
 
         await writeFile('findings.json', `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');

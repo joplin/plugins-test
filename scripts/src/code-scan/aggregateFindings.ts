@@ -46,21 +46,12 @@ const parseRegressionArtifact = (value: unknown, source: string): RegressionScan
         artifact.schemaVersion !== regressionScanArtifactSchemaVersion
         || typeof artifact.plugin !== 'string' || !artifact.plugin.trim()
         || typeof artifact.pluginId !== 'string'
-        || typeof artifact.repositoryUrl !== 'string' || !artifact.repositoryUrl.trim()
-        || !Array.isArray(artifact.requiringReview) || !artifact.requiringReview.every(isRegressionFinding)
-        || !Array.isArray(artifact.approvedEarlier) || !artifact.approvedEarlier.every(isRegressionFinding)
+        || !Array.isArray(artifact.findings) || !artifact.findings.every(isRegressionFinding)
     ) {
         throw new Error(`${source} is not a valid regression scan artifact.`);
     }
 
     assertValidPluginId(artifact.pluginId);
-    const requiringReview = artifact.requiringReview as RegressionFinding[];
-    const approvedEarlier = artifact.approvedEarlier as RegressionFinding[];
-    const approvedFingerprints = new Set(approvedEarlier.map(finding => finding.fingerprint));
-    if (requiringReview.some(finding => approvedFingerprints.has(finding.fingerprint))) {
-        throw new Error(`${source} contains a fingerprint in both finding categories.`);
-    }
-
     return artifact as unknown as RegressionScanArtifact;
 };
 
@@ -87,12 +78,6 @@ const findingsTable = (findings: AggregatedFinding[]) => {
     ].join('\n');
 };
 
-const findingsSection = (heading: string, findings: AggregatedFinding[]) => {
-    return findings.length > 0
-        ? `### ${heading}\n\n${findingsTable(findings)}`
-        : `### ${heading}\n\n_None._`;
-};
-
 const appendStepSummary = async (content: string, summaryPath = process.env.GITHUB_STEP_SUMMARY) => {
     if (!summaryPath) {
         throw new Error('GITHUB_STEP_SUMMARY is not set; cannot write the regression result to the Actions summary.');
@@ -117,35 +102,13 @@ const withPlugin = (plugin: string, findings: RegressionFinding[]): AggregatedFi
     return findings.map(finding => ({ plugin, ...finding }));
 };
 
-const summaryBody = (
-    heading: string,
-    pluginCount: number,
-    requiringReview: AggregatedFinding[],
-    approvedEarlier: AggregatedFinding[],
-) => {
-    const totalFindings = requiringReview.length + approvedEarlier.length;
-    return [
-        `## ${heading}`,
-        '',
-        `Scanned ${pluginCount} plugin${pluginCount === 1 ? '' : 's'} and classified ${totalFindings} CodeQL finding${totalFindings === 1 ? '' : 's'}.`,
-        '',
-        `- Findings requiring review: ${requiringReview.length}`,
-        `- Approved earlier: ${approvedEarlier.length}`,
-        '',
-        findingsSection('Findings Requiring Review', requiringReview),
-        '',
-        findingsSection('Approved Earlier', approvedEarlier),
-    ].join('\n');
-};
-
 const main = async () => {
     try {
         const artifactsDir = process.env.ARTIFACTS_DIR || resolve('findings');
         const expectedPluginCount = Number.parseInt(requiredEnvironmentValue('EXPECTED_PLUGIN_COUNT'), 10);
         const scanResult = requiredEnvironmentValue('SCAN_RESULT');
         const downloadOutcome = requiredEnvironmentValue('DOWNLOAD_OUTCOME');
-        const requiringReview: AggregatedFinding[] = [];
-        const approvedEarlier: AggregatedFinding[] = [];
+        const allFindings: AggregatedFinding[] = [];
         const incompleteReasons: string[] = [];
         const plugins = new Set<string>();
         const pluginIds = new Set<string>();
@@ -183,8 +146,7 @@ const main = async () => {
 
                 plugins.add(artifact.plugin);
                 pluginIds.add(artifact.pluginId);
-                requiringReview.push(...withPlugin(artifact.plugin, artifact.requiringReview));
-                approvedEarlier.push(...withPlugin(artifact.plugin, artifact.approvedEarlier));
+                allFindings.push(...withPlugin(artifact.plugin, artifact.findings));
             } catch (error) {
                 const details = error instanceof Error ? error.message : String(error);
                 incompleteReasons.push(`Could not parse ${file}: ${details}`);
@@ -196,27 +158,30 @@ const main = async () => {
         }
 
         if (incompleteReasons.length > 0) {
-            const body = [
+            const summary = [
                 '## CodeQL regression scan incomplete',
                 '',
                 'The regression result cannot be considered clean because not every configured plugin produced a valid result.',
                 '',
                 ...incompleteReasons.map(reason => `- ${reason}`),
-                '',
-                summaryBody('Partial regression findings', plugins.size, requiringReview, approvedEarlier),
-            ].join('\n');
-            await appendStepSummary(body);
+            ];
+            if (allFindings.length > 0) {
+                summary.push('', '### Findings collected before failure', '', findingsTable(allFindings));
+            }
+
+            await appendStepSummary(summary.join('\n'));
             process.exit(1);
         }
 
-        const passed = requiringReview.length === 0;
-        await appendStepSummary(summaryBody(
-            passed ? 'CodeQL regression scan passed' : 'CodeQL regression scan failed',
-            plugins.size,
-            requiringReview,
-            approvedEarlier,
-        ));
-        process.exit(passed ? 0 : 1);
+        if (allFindings.length === 0) {
+            await appendStepSummary(
+                `## CodeQL regression scan passed\n\nNo findings were reported across all ${plugins.size} tested plugins.`,
+            );
+            process.exit(0);
+        }
+
+        await appendStepSummary(`## CodeQL regression findings\n\n${findingsTable(allFindings)}`);
+        process.exit(1);
     } catch (error) {
         console.error('Aggregation failed:', error);
         process.exit(1);
