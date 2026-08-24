@@ -2,22 +2,20 @@ import type {
     GithubActionContext,
     GithubClient,
     GithubContext,
-    GithubIssueCommentResponse,
-    WorkflowFailureResult,
 } from '../types/types';
 
-export const runUrlFor = (context: GithubActionContext): string => {
+export const runUrlFor = (context: GithubActionContext) => {
     const serverUrl = (context.serverUrl ?? 'https://github.com').replace(/\/+$/, '');
     return `${serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 };
 
-const commentIdNumber = (commentId: string | number): number => {
+const commentIdNumber = (commentId: string | number) => {
     const id = typeof commentId === 'number' ? commentId : Number(commentId);
     if (!Number.isSafeInteger(id) || id <= 0) throw new Error(`Invalid issue comment id: ${commentId}`);
     return id;
 };
 
-export const updateComment = async (github: GithubClient, context: GithubActionContext, commentId: string | number, body: string): Promise<void> => {
+export const updateComment = async (github: GithubClient, context: GithubActionContext, commentId: string | number, body: string) => {
     const id = commentIdNumber(commentId);
     await github.rest.issues.updateComment({
         owner: context.repo.owner,
@@ -27,7 +25,7 @@ export const updateComment = async (github: GithubClient, context: GithubActionC
     });
 };
 
-const createComment = async (github: GithubClient, context: GithubActionContext, body: string): Promise<GithubIssueCommentResponse> => {
+const createComment = async (github: GithubClient, context: GithubActionContext, body: string) => {
     return github.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
@@ -41,7 +39,7 @@ export const failWithIssueComment = async (
     commentId: string | number | undefined,
     heading: string,
     message: string,
-): Promise<WorkflowFailureResult> => {
+) => {
     const runUrl = runUrlFor(context);
     const body = `# ${heading}\n${message}\n**Workflow Run:** [View Logs](${runUrl})`;
 
@@ -61,7 +59,7 @@ export const rejectWithIssueComment = async (
     githubContext: GithubContext,
     commentId: string | number | undefined,
     message: string,
-): Promise<WorkflowFailureResult> => {
+) => {
     const result = await failWithIssueComment(
         githubContext,
         commentId,

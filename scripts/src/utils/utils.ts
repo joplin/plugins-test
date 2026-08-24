@@ -3,13 +3,13 @@ import { access, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import type { PhaseMap } from '../types/types';
 
-export const requiredEnvironmentValue = (name: string): string => {
+export const requiredEnvironmentValue = (name: string) => {
     const value = process.env[name];
     if (!value) throw new Error(`${name} is required.`);
     return value;
 };
 
-export const toRepoRelativeFile = (uri: string | undefined): string => {
+export const toRepoRelativeFile = (uri: string | undefined) => {
     if (!uri) return 'unknown file';
 
     let normalized = uri;
@@ -31,7 +31,7 @@ export const toRepoRelativeFile = (uri: string | undefined): string => {
     return normalized || basename(uri);
 };
 
-export const fileExists = async (path: string): Promise<boolean> => {
+export const fileExists = async (path: string) => {
     try {
         await access(path);
         return true;
@@ -40,7 +40,7 @@ export const fileExists = async (path: string): Promise<boolean> => {
     }
 };
 
-export const getRegistryPath = async (relativePath: string): Promise<string> => {
+export const getRegistryPath = async (relativePath: string) => {
     const workspace = process.env.GITHUB_WORKSPACE;
     const candidates = [
         workspace ? resolve(workspace, 'plugins-test', relativePath) : '',
@@ -60,17 +60,17 @@ export const readJsonFromFile = async <T>(path: string): Promise<T> => {
     return JSON.parse(await readFile(path, 'utf8')) as T;
 };
 
-export const writeJsonFile = async (path: string, value: unknown): Promise<void> => {
+export const writeJsonFile = async (path: string, value: unknown) => {
     await writeFile(path, `${JSON.stringify(value, null, '\t')}\n`, 'utf8');
 };
 
-export const sha256File = async (path: string): Promise<string> => {
+export const sha256File = async (path: string) => {
     const hash = createHash('sha256');
     hash.update(await readFile(path));
     return `sha256:${hash.digest('hex')}`;
 };
 
-export const buildPhaseMap = (currentPhase: number, phaseCount: number): PhaseMap => {
+export const buildPhaseMap = (currentPhase: number, phaseCount: number) => {
     const phases: PhaseMap = {};
 
     for (let phase = 1; phase <= phaseCount; phase++) {
@@ -86,17 +86,17 @@ export const buildPhaseMap = (currentPhase: number, phaseCount: number): PhaseMa
     return phases;
 };
 
-export const escapeMarkdownText = (value: string): string => {
+export const escapeMarkdownText = (value: string) => {
     return value
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 };
 
-export const escapeInlineCode = (value: string): string => {
+export const escapeInlineCode = (value: string) => {
     return value.replace(/`/g, '\\`');
 };
 
-export const escapeMarkdownUrl = (value: string): string => {
+export const escapeMarkdownUrl = (value: string) => {
     return value.replace(/\(/g, '%28').replace(/\)/g, '%29');
 };

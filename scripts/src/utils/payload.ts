@@ -1,6 +1,6 @@
-import type { GithubRepository, SubmissionPayload, ValidationResult } from '../types/types';
+import type { SubmissionPayload, ValidationResult } from '../types/types';
 
-export const parseGithubRepository = (repositoryUrl: string): GithubRepository | null => {
+export const parseGithubRepository = (repositoryUrl: string) => {
     const match = repositoryUrl.trim().match(
         /^https?:\/\/(?:www\.)?github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?\/?$/,
     );
@@ -16,12 +16,12 @@ export const parseGithubRepository = (repositoryUrl: string): GithubRepository |
     };
 };
 
-const canonicalRepositoryUrl = (repositoryUrl: string): string => {
+const canonicalRepositoryUrl = (repositoryUrl: string) => {
     const repository = parseGithubRepository(repositoryUrl);
     return repository ? repository.canonicalUrl : repositoryUrl.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
 };
 
-export const normalizeRepositoryUrl = (repositoryUrl: string): string => {
+export const normalizeRepositoryUrl = (repositoryUrl: string) => {
     return canonicalRepositoryUrl(repositoryUrl).toLowerCase();
 };
 

@@ -10,7 +10,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 };
 
-const parseSarif = async (resultsSarif: string): Promise<RegressionSarifReport> => {
+const parseSarif = async (resultsSarif: string) => {
     const parsed: unknown = JSON.parse(await readFile(resultsSarif, 'utf8'));
 
     if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as RegressionSarifReport).runs)) {
@@ -43,15 +43,15 @@ const parseSarif = async (resultsSarif: string): Promise<RegressionSarifReport> 
     return parsed as RegressionSarifReport;
 };
 
-const findingsFrom = (report: RegressionSarifReport): RegressionSarifResult[] => {
+const findingsFrom = (report: RegressionSarifReport) => {
     return (report.runs ?? []).flatMap(run => run.results ?? []);
 };
 
-const ruleIdFor = (finding: RegressionSarifResult): string => {
+const ruleIdFor = (finding: RegressionSarifResult) => {
     return finding.ruleId ?? finding.rule?.id ?? 'unknown-rule';
 };
 
-const main = async (): Promise<void> => {
+const main = async () => {
     try {
         const resultsSarif = requiredEnvironmentValue('RESULTS_SARIF');
         const pluginName = requiredEnvironmentValue('PLUGIN_NAME');

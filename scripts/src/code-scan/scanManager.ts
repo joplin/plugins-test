@@ -56,7 +56,7 @@ export const legacyRepositoryMigrationError = (
 };
 
 // checks if the plugin already exists in the manifest.json
-const existingPluginFor = async (pluginId: string): Promise<PluginManifest | null> => {
+const existingPluginFor = async (pluginId: string) => {
     const manifestsPath = await getRegistryPath('manifests.json');
 
     if (!(await fileExists(manifestsPath))) return null;
@@ -401,7 +401,7 @@ export const generateFinalReport = async (
     await updateComment(github, context, commentId, report.body);
     core.setOutput('handled_failure', (!report.ok).toString());
 
-    if (!report.ok) {
+    if (report.ok === false) {
         core.setFailed(report.error ?? 'The security scan did not complete successfully.');
     }
 

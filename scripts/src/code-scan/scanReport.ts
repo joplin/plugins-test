@@ -1,9 +1,7 @@
 import { readFile } from 'fs/promises';
 import type {
     FinalReportInput,
-    FinalReportResult,
     PhaseMap,
-    ReportMetadata,
     SarifReport,
     SarifRule,
     SarifResult,
@@ -13,12 +11,12 @@ import { buildPhaseMap, escapeInlineCode, escapeMarkdownText, escapeMarkdownUrl,
 const phaseCount = 5;
 
 // Get the phase status 
-export const getPhases = (currentPhase: number): PhaseMap => {
+export const getPhases = (currentPhase: number) => {
     return buildPhaseMap(currentPhase, phaseCount);
 };
 
 // Creates the comment template that helps us track what Phase is currently going on 
-export const statusTemplate = (repoUrl: string, commitHash: string, runUrl: string, phases: PhaseMap | null, isUpdate?: boolean): string => {
+export const statusTemplate = (repoUrl: string, commitHash: string, runUrl: string, phases: PhaseMap | null, isUpdate?: boolean) => {
     const targetText = escapeMarkdownText(`${repoUrl}/tree/${commitHash}`);
     const targetUrl = escapeMarkdownUrl(`${repoUrl}/tree/${commitHash}`);
     const workflowRunUrl = escapeMarkdownUrl(runUrl);
@@ -43,7 +41,7 @@ export const statusTemplate = (repoUrl: string, commitHash: string, runUrl: stri
 * ${phases[5]} **Phase 5: Final Report Generation**`;
 };
 
-export const extractReportMetadata = (body: string): ReportMetadata => {
+export const extractReportMetadata = (body: string) => {
     const repoUrlMatch = body.match(/\*\*Target:\*\* \[([^\]]+)\/(?:commit|tree)\//);
     const commitHashMatch = body.match(/\*\*Target:\*\* \[.*?\/(?:commit|tree)\/([^\]]+)\]/);
     const runUrlMatch = body.match(/\*\*Workflow Run:\*\* \[.*?\]\(([^)]+)\)/);
@@ -67,7 +65,7 @@ const toGitHubBlobUrl = (repoUrl: string, commitHash: string, file: string, line
     return `${repoUrl}/blob/${commitHash}/${filePath}#L${line}`;
 };
 
-const readSarif = async (sarifPath: string): Promise<SarifReport> => {
+const readSarif = async (sarifPath: string) => {
     const parsed: unknown = JSON.parse(await readFile(sarifPath, 'utf8'));
 
     if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as SarifReport).runs)) {
@@ -166,12 +164,12 @@ const failedReport = (
     runUrl: string,
     reason: string,
     isUpdate?: boolean,
-): FinalReportResult => {
+) => {
     const header = statusTemplate(repoUrl, commitHash, runUrl, null, isUpdate)
         .replace('# Security Scan Report', '# Security Scan Failed');
 
     return {
-        ok: false,
+        ok: false as const,
         body: `${header}\n\n---\n\n❌ ${escapeMarkdownText(reason)}\n\nThe issue remains open so the scan can be investigated or retried.\n`,
         error: reason,
     };
@@ -184,7 +182,7 @@ export const renderFinalReport = async ({
     runUrl,
     analysisOutcome,
     isUpdate,
-}: FinalReportInput): Promise<FinalReportResult> => {
+}: FinalReportInput) => {
     if (analysisOutcome !== 'success') {
         return failedReport(
             repoUrl,
@@ -224,7 +222,7 @@ export const renderFinalReport = async ({
     const results = sarifResults(sarif);
 
     if (results.length === 0) {
-        return { ok: true, body: `${reportHeader}✅ No vulnerabilities detected by CodeQL.\n` };
+        return { ok: true as const, body: `${reportHeader}✅ No vulnerabilities detected by CodeQL.\n` };
     }
 
     // shows error findings above warning findings
@@ -240,5 +238,5 @@ export const renderFinalReport = async ({
 
     const findings = sortedResults.map(result => renderSarifFinding(sarif, result, repoUrl, commitHash)).join('');
 
-    return { ok: true, body: `${reportHeader}${findings}` };
+    return { ok: true as const, body: `${reportHeader}${findings}` };
 };

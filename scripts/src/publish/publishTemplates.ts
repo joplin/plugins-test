@@ -8,7 +8,7 @@ export const statusTemplate = (
     runUrl: string,
     currentPhase: number,
     details?: string,
-): string => {
+) => {
     const phases = buildPhaseMap(currentPhase, phaseCount);
     const targetText = escapeMarkdownText(`${payload.repository_url}/tree/${payload.commit_hash}`);
     const targetUrl = escapeMarkdownUrl(`${payload.repository_url}/tree/${payload.commit_hash}`);
@@ -34,7 +34,7 @@ export const statusTemplate = (
 **Workflow Run:** [View Logs](${workflowRunUrl})${detailBlock}${pipelineBlock}`;
 };
 
-export const failureTemplate = (heading: string, message: string, runUrl: string): string => {
+export const failureTemplate = (heading: string, message: string, runUrl: string) => {
     const escapedMessage = escapeMarkdownText(message);
     const workflowRunUrl = escapeMarkdownUrl(runUrl);
     return `# ${heading}\n\n${escapedMessage}\n\n**Workflow Run:** [View Logs](${workflowRunUrl})`;

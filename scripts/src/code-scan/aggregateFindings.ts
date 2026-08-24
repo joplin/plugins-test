@@ -13,11 +13,11 @@ const isFinding = (value: unknown): value is Finding => {
         && typeof finding.line === 'string';
 };
 
-const markdownTableCell = (value: string): string => {
+const markdownTableCell = (value: string) => {
     return value.replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|');
 };
 
-const findingsTable = (findings: Finding[]): string => {
+const findingsTable = (findings: Finding[]) => {
     const rows = findings.map(finding => {
         return `| ${markdownTableCell(finding.plugin)} | ${markdownTableCell(finding.ruleId)} | ${markdownTableCell(finding.file)} | ${markdownTableCell(finding.line)} |`;
     });
@@ -29,7 +29,7 @@ const findingsTable = (findings: Finding[]): string => {
     ].join('\n');
 };
 
-const appendStepSummary = async (content: string, summaryPath = process.env.GITHUB_STEP_SUMMARY): Promise<void> => {
+const appendStepSummary = async (content: string, summaryPath = process.env.GITHUB_STEP_SUMMARY) => {
     if (!summaryPath) {
         throw new Error('GITHUB_STEP_SUMMARY is not set; cannot write the regression result to the Actions summary.');
     }
@@ -52,7 +52,7 @@ const findJsonFiles = async (dir: string): Promise<string[]> => {
     return files.sort();
 };
 
-const main = async (): Promise<void> => {
+const main = async () => {
     try {
         const artifactsDir = process.env.ARTIFACTS_DIR || resolve('findings');
         const expectedPluginCount = Number.parseInt(requiredEnvironmentValue('EXPECTED_PLUGIN_COUNT'), 10);
