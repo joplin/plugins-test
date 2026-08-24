@@ -1,0 +1,19 @@
+{
+	"manifest_version": 1,
+	"id": "com.akshajrawat.final-submission-test",
+	"app_min_version": "3.7",
+	"version": "1.0.0",
+	"name": "Final Submission Test",
+	"description": "A simple plugin for demonstrating the complete Joplin plugin submission flow.",
+	"author": "Akshaj Rawat",
+	"homepage_url": "https://github.com/akshajrawat/joplin-test-plugin-",
+	"repository_url": "https://github.com/akshajrawat/joplin-test-plugin-",
+	"keywords": [],
+	"categories": [],
+	"screenshots": [],
+	"icons": {},
+	"promo_tile": {},
+	"_publish_hash": "sha256:2ca679792f0aa83993545b79027a38c33b81d443fb91ec8fb336518840f9c89b",
+	"_publish_commit": "master:43bb47e3ff95f7885365c6db309d0fec80a5b9cc",
+	"_approved": true
+}

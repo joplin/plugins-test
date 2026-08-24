@@ -25,4 +25,5 @@ The test command runs the CodeQL regression tests in `.github/codeql/tests`.
 <!-- PLUGIN_LIST -->
 | &nbsp; | &nbsp; | Name  | Version | Description | Author |
 | ----- | ----- | ----- | ----- | ----- | ----- |
+| [🏠](https://github.com/akshajrawat/joplin-test-plugin-) | [⬇️](https://github.com/joplin/plugins/raw/master/plugins/com.akshajrawat.final-submission-test/plugin.jpl) | Final Submission Test | 1.0.0 | A simple plugin for demonstrating the complete Joplin plugin submission flow. | Akshaj Rawat |
 <!-- PLUGIN_LIST -->
