@@ -5,12 +5,10 @@ on:
     paths:
       - '.github/codeql/**'
       - '.github/workflows/rule-regression-test.yml'
-      - 'scripts/**'
   pull_request:
     paths:
       - '.github/codeql/**'
       - '.github/workflows/rule-regression-test.yml'
-      - 'scripts/**'
 
 permissions:
   contents: read
@@ -84,7 +82,6 @@ jobs:
         env:
           RESULTS_SARIF: ${{ github.workspace }}/codeql-results/javascript.sarif
           PLUGIN_NAME: ${{ matrix.plugin.repo }}
-          SOURCE_ROOT: ${{ github.workspace }}/target-plugin
         run: node dist/code-scan/regressionScan.js
 
       - name: Upload findings

@@ -1,13 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import type { FingerprintedSarifResult } from '../types/approvedFindings';
-import {
-    regressionScanArtifactSchemaVersion,
-    type RegressionFinding,
-    type RegressionScanArtifact,
+import { basename } from 'node:path';
+import type {
+    Finding,
+    RegressionSarifReport,
+    RegressionSarifResult,
 } from '../types/regressionTypes';
-import type { SarifReport } from '../types/types';
-import { assertValidPluginId, fingerprintSarifResults } from './approvedFindings';
 
 const requiredEnvironmentValue = (name: string) => {
     const value = process.env[name];
@@ -22,49 +19,66 @@ const requiredEnvironmentValue = (name: string) => {
 export const parseSarif = async (resultsSarif: string) => {
     const parsed: unknown = JSON.parse(await readFile(resultsSarif, 'utf8'));
 
-    if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as SarifReport).runs)) {
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as RegressionSarifReport).runs)) {
         throw new Error(`Invalid SARIF report: ${resultsSarif}`);
     }
 
-    return parsed as SarifReport;
+    return parsed as RegressionSarifReport;
 };
 
-const regressionFindingFrom = (finding: FingerprintedSarifResult): RegressionFinding => ({
-    ruleId: finding.identity.ruleId,
-    file: finding.identity.file,
-    line: finding.identity.lineHint,
-    container: finding.identity.container,
-    fingerprint: finding.identity.fingerprint,
-});
+export const findingsFrom = (report: RegressionSarifReport) => {
+    return (report.runs ?? []).flatMap(run => run.results ?? []);
+};
+
+const ruleIdFor = (finding: RegressionSarifResult) => {
+    return finding.ruleId ?? finding.rule?.id ?? 'unknown-rule';
+};
+
+const fileNameFor = (uri: string | undefined) => {
+    if (!uri) return 'unknown file';
+
+    let normalized = uri;
+    try {
+        normalized = decodeURIComponent(normalized);
+    } catch {
+        // Keep the original URI when it contains malformed escape sequences.
+    }
+
+    normalized = normalized
+        .replace(/^file:\/\//, '')
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '');
+
+    const targetPluginMarker = 'target-plugin/';
+    const targetPluginIndex = normalized.lastIndexOf(targetPluginMarker);
+    if (targetPluginIndex >= 0) return normalized.slice(targetPluginIndex + targetPluginMarker.length);
+
+    return normalized || basename(uri);
+};
 
 export const main = async () => {
     try {
         const resultsSarif = requiredEnvironmentValue('RESULTS_SARIF');
         const pluginName = requiredEnvironmentValue('PLUGIN_NAME');
-        const sourceRoot = requiredEnvironmentValue('SOURCE_ROOT');
         const report = await parseSarif(resultsSarif);
-        const manifestPath = resolve(sourceRoot, 'src', 'manifest.json');
-        const manifest: unknown = JSON.parse(await readFile(manifestPath, 'utf8'));
-        if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
-            throw new Error(`Invalid plugin manifest: ${manifestPath}`);
-        }
+        const findings = findingsFrom(report);
 
-        const pluginId = (manifest as Record<string, unknown>).id;
-        try {
-            assertValidPluginId(pluginId);
-        } catch {
-            throw new Error(`Plugin manifest has an invalid id: ${manifestPath}`);
-        }
+        const extractedFindings: Finding[] = findings.flatMap(finding => {
+            const locations = finding.locations ?? [];
+            const ruleId = ruleIdFor(finding);
 
-        const fingerprinted = await fingerprintSarifResults(report, sourceRoot);
-        const artifact: RegressionScanArtifact = {
-            schemaVersion: regressionScanArtifactSchemaVersion,
-            plugin: pluginName,
-            pluginId,
-            findings: fingerprinted.map(regressionFindingFrom),
-        };
+            if (locations.length === 0) {
+                return [{ plugin: pluginName, ruleId, file: 'unknown file', line: '-' }];
+            }
 
-        await writeFile('findings.json', `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');
+            return locations.map(location => {
+                const file = fileNameFor(location.physicalLocation?.artifactLocation?.uri);
+                const line = location.physicalLocation?.region?.startLine?.toString() ?? '-';
+                return { plugin: pluginName, ruleId, file, line };
+            });
+        });
+
+        await writeFile('findings.json', JSON.stringify(extractedFindings, null, 2));
         process.exit(0);
     } catch (error) {
         console.error(`CodeQL regression scan failed:`, error);

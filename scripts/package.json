@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "codeql test run --threads=0 ../.github/codeql/tests",
-    "regression-scan": "npm run build && node dist/code-scan/regressionScan.js"
+    "regression-scan": "node src/code-scan/regressionScan.js"
   },
   "dependencies": {
     "@types/node": "^20.4.5",

@@ -143,12 +143,7 @@ jobs:
           INIT_COMMENT_ID: ${{ steps.init.outputs.comment_id }}
           INIT_REPO_URL: ${{ steps.init.outputs.repository_url }}
           INIT_COMMIT_HASH: ${{ steps.init.outputs.commit_hash }}
-          INIT_PLUGIN_ID: ${{ steps.sourcecheck.outputs.plugin_id }}
           CODEQL_ANALYSIS_OUTCOME: ${{ steps.codeql-analysis.outcome }}
-          TARGET_SOURCE_ROOT: ${{ github.workspace }}/target-plugin
-          BASELINE_ROOT: ${{ github.workspace }}/plugins-test
-          SCAN_ARTIFACT_PATH: ${{ github.workspace }}/security-scan-findings/security-scan-findings.json
-          SCAN_ARTIFACT_NAME: security-scan-findings
         uses: actions/github-script@v9
         with:
           script: |
@@ -159,36 +154,11 @@ jobs:
               'codeql-results/javascript.sarif',
               process.env.INIT_REPO_URL,
               process.env.INIT_COMMIT_HASH,
-              process.env.CODEQL_ANALYSIS_OUTCOME,
-              process.env.INIT_PLUGIN_ID,
-              process.env.TARGET_SOURCE_ROOT,
-              process.env.BASELINE_ROOT,
-              process.env.SCAN_ARTIFACT_PATH,
-              process.env.SCAN_ARTIFACT_NAME
+              process.env.CODEQL_ANALYSIS_OUTCOME
             );
 
-      - name: Upload immutable scan findings
-        if: steps.finalize.outputs.scan_succeeded == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-scan-findings
-          path: security-scan-findings/security-scan-findings.json
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Mark scan artifact ready for approval
-        id: artifact_ready
-        if: steps.finalize.outputs.scan_succeeded == 'true'
-        env:
-          INIT_COMMENT_ID: ${{ steps.init.outputs.comment_id }}
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const scan = require(process.env.SCAN_MANAGER_PATH);
-            await scan.markScanArtifactReady({github, context, core}, process.env.INIT_COMMENT_ID);
-
       - name: Handle unreported workflow failure
-        if: failure() && steps.ack.outputs.comment_id && steps.init.outputs.handled_failure != 'true' && steps.sourcecheck.outputs.handled_failure != 'true' && steps.finalize.outputs.handled_failure != 'true' && (steps.finalize.outcome != 'success' || steps.artifact_ready.outcome != 'success')
+        if: failure() && steps.ack.outputs.comment_id && steps.init.outputs.handled_failure != 'true' && steps.sourcecheck.outputs.handled_failure != 'true' && steps.finalize.outputs.handled_failure != 'true' && steps.finalize.outcome != 'success'
         env:
           ACK_COMMENT_ID: ${{ steps.ack.outputs.comment_id }}
         uses: actions/github-script@v9

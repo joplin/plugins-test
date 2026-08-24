@@ -9,14 +9,6 @@ import type {
     SarifRule,
     SarifResult,
 } from '../types/types';
-import {
-    classifyFindings,
-    createScanArtifact,
-    fingerprintSarifResults,
-    readApprovedBaseline,
-    writeScanArtifact,
-} from './approvedFindings';
-import type { FingerprintedSarifResult } from '../types/approvedFindings';
 
 const phaseCount = 5;
 const targetPluginPathMarker = '/target-plugin/';
@@ -209,26 +201,24 @@ const severityIcon = (rule: SarifRule | null) => {
 };
 
 // renders finding in reviewer friendly way 
-const renderSarifFinding = (sarif: SarifReport, finding: FingerprintedSarifResult, repoUrl: string, commitHash: string) => {
-    const result = finding.result;
-    const ruleId = finding.identity.ruleId;
-    const rule = findRule(sarif, ruleId);
+const renderSarifFinding = (sarif: SarifReport, result: SarifResult, repoUrl: string, commitHash: string) => {
+    const rule = findRule(sarif, result.ruleId);
     const rawMessage = result.message?.text ?? '';
     const message = Array.from(new Set(rawMessage.split('\n').map(value => value.trim())))
         .filter(Boolean)
         .join(' ');
-    const title = rule?.shortDescription?.text ?? rule?.name ?? ruleId;
+    const title = rule?.shortDescription?.text ?? rule?.name ?? result.ruleId;
 
     // Find the file path where the vulnerability was found 
-    const file = finding.identity.file;
-    const line = finding.identity.lineHint;
+    const location = result.locations?.[0]?.physicalLocation;
+    const file = toRepoRelativeFile(location?.artifactLocation?.uri ?? '');
+    const line = location?.region?.startLine ?? 1;
     const locationUrl = escapeMarkdownUrl(toGitHubBlobUrl(repoUrl, commitHash, file, line));
 
     return `### ${severityIcon(rule)}: ${escapeMarkdownText(title)}
-* **Rule Violated:** \`${escapeInlineCode(ruleId)}\`
+* **Rule Violated:** \`${escapeInlineCode(result.ruleId)}\`
 * **Flagged For:** ${escapeMarkdownText(message)}
 * **Location:** [\`${escapeInlineCode(`${file}#L${line}`)}\`](${locationUrl})
-* **Finding Fingerprint:** \`${finding.identity.fingerprint}\`
 
 `;
 };
@@ -252,16 +242,9 @@ const failedReport = (
 
 export const renderFinalReport = async ({
     sarifPath,
-    sourceRoot,
-    baselineRoot,
-    artifactPath,
-    artifactName,
-    pluginId,
     repoUrl,
     commitHash,
     runUrl,
-    issueNumber,
-    runId,
     analysisOutcome,
     isUpdate,
 }: FinalReportInput): Promise<FinalReportResult> => {
@@ -275,17 +258,7 @@ export const renderFinalReport = async ({
         );
     }
 
-    const hiddenMetadata = `<!-- security-scan-metadata:${JSON.stringify({
-        schemaVersion: 1,
-        pluginId,
-        repositoryUrl: repoUrl,
-        commitHash: commitHash.toLowerCase(),
-        issueNumber,
-        runId,
-        artifactName,
-        artifactReady: false,
-    })} -->`;
-    const reportHeader = `${statusTemplate(repoUrl, commitHash, runUrl, null, isUpdate)}\n${hiddenMetadata}\n\n> Applying the \`status: approved\` label approves every finding in this exact scan for \`${escapeInlineCode(pluginId)}\` and replaces that plugin's previous baseline.\n\n---\n`;
+    const reportHeader = `${statusTemplate(repoUrl, commitHash, runUrl, null, isUpdate)}\n\n---\n# Findings\n\n`;
 
     if (!(await fileExists(sarifPath))) {
         return failedReport(
@@ -311,49 +284,16 @@ export const renderFinalReport = async ({
         );
     }
 
-    let fingerprinted: FingerprintedSarifResult[];
-    try {
-        fingerprinted = await fingerprintSarifResults(sarif, sourceRoot);
-        const artifact = createScanArtifact(pluginId, repoUrl, commitHash, issueNumber, runId, fingerprinted);
-        await writeScanArtifact(artifactPath, artifact);
-    } catch (error) {
-        const details = error instanceof Error ? error.message : String(error);
-        return failedReport(
-            repoUrl,
-            commitHash,
-            runUrl,
-            `The findings could not be fingerprinted safely: ${details}`,
-            isUpdate,
-        );
-    }
+    const results = sarifResults(sarif);
 
-    let baseline;
-    try {
-        baseline = await readApprovedBaseline(baselineRoot, pluginId, repoUrl);
-    } catch (error) {
-        const details = error instanceof Error ? error.message : String(error);
-        return failedReport(
-            repoUrl,
-            commitHash,
-            runUrl,
-            `The plugin's approved-findings baseline is invalid: ${details}`,
-            isUpdate,
-        );
-    }
-
-    const { requiringReview, approvedEarlier } = classifyFindings(fingerprinted, baseline);
-
-    if (fingerprinted.length === 0) {
-        return {
-            ok: true,
-            body: `${reportHeader}# Findings Requiring Review\n\n✅ No vulnerabilities detected by CodeQL.\n\n# Approved Earlier\n\n_None._\n`,
-        };
+    if (results.length === 0) {
+        return { ok: true, body: `${reportHeader}✅ No vulnerabilities detected by CodeQL.\n` };
     }
 
     // shows error findings above warning findings
-    const sortResults = (findings: FingerprintedSarifResult[]) => [...findings].sort((a, b) => {
-        const ruleA = findRule(sarif, a.identity.ruleId);
-        const ruleB = findRule(sarif, b.identity.ruleId);
+    const sortedResults = [...results].sort((a, b) => {
+        const ruleA = findRule(sarif, a.ruleId);
+        const ruleB = findRule(sarif, b.ruleId);
 
         const levelA = getSeverityLevel(ruleA);
         const levelB = getSeverityLevel(ruleB);
@@ -365,15 +305,7 @@ export const renderFinalReport = async ({
         return 0;
     });
 
-    const activeBody = requiringReview.length > 0
-        ? sortResults(requiringReview).map(result => renderSarifFinding(sarif, result, repoUrl, commitHash)).join('')
-        : '✅ No findings require a new review.\n\n';
-    const approvedBody = approvedEarlier.length > 0
-        ? sortResults(approvedEarlier).map(result => renderSarifFinding(sarif, result, repoUrl, commitHash)).join('')
-        : '_None._\n';
+    const findings = sortedResults.map(result => renderSarifFinding(sarif, result, repoUrl, commitHash)).join('');
 
-    return {
-        ok: true,
-        body: `${reportHeader}# Findings Requiring Review\n\n${activeBody}# Approved Earlier\n\n${approvedBody}`,
-    };
+    return { ok: true, body: `${reportHeader}${findings}` };
 };

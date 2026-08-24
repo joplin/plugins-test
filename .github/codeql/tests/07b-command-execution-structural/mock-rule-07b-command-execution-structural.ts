@@ -20,7 +20,7 @@ function cryptominingCommandsOwnedByRule6() {
     childProcess.spawn('node', ['miner.js', 'stratum+tcp://pool.example:3333']);
 }
 
-async function otherCases() {
+async function safeCases() {
     const description = 'echo reviewed';
     console.info(description);
 
