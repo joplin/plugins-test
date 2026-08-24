@@ -1,6 +1,6 @@
-import type { SubmissionPayload, ValidationResult } from '../types/types';
+import type { GithubRepository, SubmissionPayload, ValidationResult } from '../types/types';
 
-export const parseGithubRepository = (repositoryUrl: string) => {
+export const parseGithubRepository = (repositoryUrl: string): GithubRepository | null => {
     const match = repositoryUrl.trim().match(
         /^https?:\/\/(?:www\.)?github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?\/?$/,
     );
@@ -16,16 +16,17 @@ export const parseGithubRepository = (repositoryUrl: string) => {
     };
 };
 
-export const canonicalRepositoryUrl = (repositoryUrl: string) => {
+const canonicalRepositoryUrl = (repositoryUrl: string): string => {
     const repository = parseGithubRepository(repositoryUrl);
     return repository ? repository.canonicalUrl : repositoryUrl.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
 };
 
-export const normalizeRepositoryUrl = (repositoryUrl: string) => {
+export const normalizeRepositoryUrl = (repositoryUrl: string): string => {
     return canonicalRepositoryUrl(repositoryUrl).toLowerCase();
 };
 
 const pluginVersionPattern = /^\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?$/;
+const payloadFields = ['plugin_name', 'version', 'repository_url', 'commit_hash'] as const;
 
 export const parseIssuePayload = (body: string | null | undefined): ValidationResult => {
     const jsonMatch = (body ?? '').match(/```json\s*([\s\S]*?)\s*```/);
@@ -37,7 +38,7 @@ export const parseIssuePayload = (body: string | null | undefined): ValidationRe
         };
     }
 
-    let payload: Partial<SubmissionPayload>;
+    let payload: Record<string, unknown>;
 
     try {
         const parsedPayload: unknown = JSON.parse(jsonMatch[1]);
@@ -49,7 +50,7 @@ export const parseIssuePayload = (body: string | null | undefined): ValidationRe
             };
         }
 
-        payload = parsedPayload as Partial<SubmissionPayload>;
+        payload = parsedPayload as Record<string, unknown>;
     } catch {
         return {
             ok: false,
@@ -57,14 +58,24 @@ export const parseIssuePayload = (body: string | null | undefined): ValidationRe
         };
     }
 
-    const { plugin_name, version, repository_url, commit_hash } = payload;
+    const missingFields = payloadFields.filter(field => !Object.prototype.hasOwnProperty.call(payload, field));
 
-    if (!plugin_name || !version || !repository_url || !commit_hash) {
+    if (missingFields.length > 0) {
         return {
             ok: false,
             error: 'Missing required fields. Provide `plugin_name`, `version`, `repository_url`, and `commit_hash`',
         };
     }
+
+    const unexpectedFields = Object.keys(payload).filter(field => !(payloadFields as readonly string[]).includes(field));
+    if (unexpectedFields.length > 0) {
+        return {
+            ok: false,
+            error: `Unexpected payload fields: ${unexpectedFields.join(', ')}.`,
+        };
+    }
+
+    const { plugin_name, version, repository_url, commit_hash } = payload;
 
     if (
         typeof plugin_name !== 'string'
@@ -117,7 +128,7 @@ export const parseIssuePayload = (body: string | null | undefined): ValidationRe
             plugin_name: normalizedPluginName,
             version: normalizedVersion,
             repository_url: repository.canonicalUrl,
-            commit_hash,
+            commit_hash: commit_hash.toLowerCase(),
         },
     };
 };

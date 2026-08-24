@@ -1,62 +1,57 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { basename } from 'node:path';
 import type {
     Finding,
     RegressionSarifReport,
     RegressionSarifResult,
 } from '../types/regressionTypes';
+import { requiredEnvironmentValue, toRepoRelativeFile } from '../utils/utils';
 
-const requiredEnvironmentValue = (name: string) => {
-    const value = process.env[name];
-
-    if (!value) {
-        throw new Error(`${name} is required.`);
-    }
-
-    return value;
+const isObject = (value: unknown): value is Record<string, unknown> => {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
 };
 
-export const parseSarif = async (resultsSarif: string) => {
+const parseSarif = async (resultsSarif: string): Promise<RegressionSarifReport> => {
     const parsed: unknown = JSON.parse(await readFile(resultsSarif, 'utf8'));
 
     if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as RegressionSarifReport).runs)) {
         throw new Error(`Invalid SARIF report: ${resultsSarif}`);
     }
 
+    for (const run of (parsed as RegressionSarifReport).runs ?? []) {
+        if (!isObject(run) || (run.results !== undefined && !Array.isArray(run.results))) {
+            throw new Error(`Invalid SARIF analysis run: ${resultsSarif}`);
+        }
+
+        for (const result of run.results ?? []) {
+            if (!isObject(result)) {
+                throw new Error(`Invalid SARIF result: ${resultsSarif}`);
+            }
+
+            const locations = result.locations;
+            if (locations === undefined) continue;
+
+            if (!Array.isArray(locations)) {
+                throw new Error(`Invalid SARIF result locations: ${resultsSarif}`);
+            }
+
+            if (locations.some(location => !isObject(location))) {
+                throw new Error(`Invalid SARIF result location: ${resultsSarif}`);
+            }
+        }
+    }
+
     return parsed as RegressionSarifReport;
 };
 
-export const findingsFrom = (report: RegressionSarifReport) => {
+const findingsFrom = (report: RegressionSarifReport): RegressionSarifResult[] => {
     return (report.runs ?? []).flatMap(run => run.results ?? []);
 };
 
-const ruleIdFor = (finding: RegressionSarifResult) => {
+const ruleIdFor = (finding: RegressionSarifResult): string => {
     return finding.ruleId ?? finding.rule?.id ?? 'unknown-rule';
 };
 
-const fileNameFor = (uri: string | undefined) => {
-    if (!uri) return 'unknown file';
-
-    let normalized = uri;
-    try {
-        normalized = decodeURIComponent(normalized);
-    } catch {
-        // Keep the original URI when it contains malformed escape sequences.
-    }
-
-    normalized = normalized
-        .replace(/^file:\/\//, '')
-        .replace(/\\/g, '/')
-        .replace(/^\/+/, '');
-
-    const targetPluginMarker = 'target-plugin/';
-    const targetPluginIndex = normalized.lastIndexOf(targetPluginMarker);
-    if (targetPluginIndex >= 0) return normalized.slice(targetPluginIndex + targetPluginMarker.length);
-
-    return normalized || basename(uri);
-};
-
-export const main = async () => {
+const main = async (): Promise<void> => {
     try {
         const resultsSarif = requiredEnvironmentValue('RESULTS_SARIF');
         const pluginName = requiredEnvironmentValue('PLUGIN_NAME');
@@ -72,17 +67,16 @@ export const main = async () => {
             }
 
             return locations.map(location => {
-                const file = fileNameFor(location.physicalLocation?.artifactLocation?.uri);
+                const file = toRepoRelativeFile(location.physicalLocation?.artifactLocation?.uri);
                 const line = location.physicalLocation?.region?.startLine?.toString() ?? '-';
                 return { plugin: pluginName, ruleId, file, line };
             });
         });
 
-        await writeFile('findings.json', JSON.stringify(extractedFindings, null, 2));
-        process.exit(0);
+        await writeFile('findings.json', `${JSON.stringify(extractedFindings, null, 2)}\n`, 'utf8');
     } catch (error) {
         console.error(`CodeQL regression scan failed:`, error);
-        process.exit(1);
+        process.exitCode = 1;
     }
 };
 

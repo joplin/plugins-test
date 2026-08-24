@@ -1,40 +1,8 @@
-import type { SubmissionPayload } from '../types/types';
+import type { GithubActionContext, SubmissionPayload } from '../types/types';
 import type { PublishPayload, PublishSummary } from '../types/publishTypes';
-import { getRegistryPath, readJsonFile } from '../utils/utils';
-import { parseGithubRepository, normalizeRepositoryUrl, parseIssuePayload } from '../utils/payload';
+import { parseGithubRepository, parseIssuePayload } from '../utils/payload';
 
-export const existingPluginFor = async (pluginName: string) => {
-    const manifestsPath = await getRegistryPath('manifests.json');
-    const manifests = await readJsonFile<Record<string, any>>(manifestsPath, {});
-    const directlyRegisteredPlugin = manifests[pluginName];
-
-    if (directlyRegisteredPlugin) return directlyRegisteredPlugin;
-
-    for (const pluginId in manifests) {
-        const plugin = manifests[pluginId];
-        if (plugin.name === pluginName) return plugin;
-    }
-
-    return null;
-};
-
-export const validateRegistryOwnership = async (payload: PublishPayload) => {
-    const existingPlugin = await existingPluginFor(payload.plugin_name);
-    const registeredUrl = existingPlugin?.repository_url;
-
-    if (registeredUrl) {
-        const normalizedRegisteredUrl = normalizeRepositoryUrl(registeredUrl);
-        const normalizedPayloadUrl = normalizeRepositoryUrl(payload.repository_url);
-
-        if (normalizedRegisteredUrl !== normalizedPayloadUrl) {
-            return `Security reject: plugin ${payload.plugin_name} already exists, but the repository URL does not match the registered owner.\nExpected: ${registeredUrl}\nProvided: ${payload.repository_url}`;
-        }
-    }
-
-    return '';
-};
-
-export const toPublishPayload = async (payload: SubmissionPayload): Promise<PublishPayload> => {
+export const toPublishPayload = (payload: SubmissionPayload): PublishPayload => {
     const repository = parseGithubRepository(payload.repository_url);
     if (!repository) throw new Error(`Invalid repository URL: ${payload.repository_url}`);
 
@@ -45,17 +13,17 @@ export const toPublishPayload = async (payload: SubmissionPayload): Promise<Publ
     };
 };
 
-export const parsePayloadFromContext = async (context: any): Promise<PublishPayload | null> => {
+export const parsePayloadFromContext = (context: GithubActionContext): PublishPayload | null => {
     const validation = parseIssuePayload(context.payload.issue.body);
     if (validation.ok === false) return null;
-    return await toPublishPayload(validation.payload);
+    return toPublishPayload(validation.payload);
 };
 
-export const parseBoolean = async (value: unknown) => {
+export const parseBoolean = (value: unknown) => {
     return value === true || value === 'true' || value === '1';
 };
 
-export const parseSummary = async (summaryJson: string | PublishSummary | null | undefined): Promise<PublishSummary> => {
+export const parseSummary = (summaryJson: string | PublishSummary | null | undefined): PublishSummary => {
     if (!summaryJson) return {};
     if (typeof summaryJson !== 'string') return summaryJson;
 
@@ -66,7 +34,7 @@ export const parseSummary = async (summaryJson: string | PublishSummary | null |
     }
 };
 
-export const commitHashFromPublishCommit = async (publishCommit: unknown) => {
+export const commitHashFromPublishCommit = (publishCommit: unknown) => {
     if (typeof publishCommit !== 'string') return '';
     return publishCommit.includes(':') ? (publishCommit.split(':').pop() ?? '') : publishCommit;
 };

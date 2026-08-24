@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { readFile } from 'fs/promises';
 import type { GithubApiContext, GithubContext, GithubCoreContext } from '../types/types';
-import type { PublishSummary } from '../types/publishTypes';
+import type { PluginManifest, PluginRegistry, PublishSummary } from '../types/publishTypes';
 import { runUrlFor, updateComment } from '../utils/github';
 import { normalizeRepositoryUrl } from '../utils/payload';
 import { statusTemplate, failureTemplate } from './publishTemplates';
@@ -12,7 +12,7 @@ import { fileExists, readJsonFromFile, writeJsonFile, sha256File, escapeMarkdown
 
 export const acknowledgePublishInitialization = async ({ github, context, core }: GithubContext) => {
     const runUrl = runUrlFor(context);
-    const escapedRunUrl = await escapeMarkdownUrl(runUrl);
+    const escapedRunUrl = escapeMarkdownUrl(runUrl);
     const initialBody = `# Plugin Publish Status\nValidating the approved submission.\n\n**Workflow Run:** [View Logs](${escapedRunUrl})`;
     const initialCommentId = process.env.INITIAL_COMMENT_ID;
 
@@ -34,7 +34,7 @@ export const acknowledgePublishInitialization = async ({ github, context, core }
     const validation = parseIssuePayload(context.payload.issue.body);
 
     if (validation.ok === false) {
-        const template = await failureTemplate('Plugin Publish Rejected', validation.error ?? '', runUrl);
+        const template = failureTemplate('Plugin Publish Rejected', validation.error ?? '', runUrl);
         await updateComment(github, context, commentId, template);
 
         core.setOutput('should_proceed', 'false');
@@ -43,11 +43,11 @@ export const acknowledgePublishInitialization = async ({ github, context, core }
         return { should_proceed: false, comment_id: commentId.toString() };
     }
 
-    const payload = await toPublishPayload(validation.payload);
+    const payload = toPublishPayload(validation.payload);
 
     if (!(await hasCompletedScanReport({ github, context }, payload))) {
         const scanError = 'No completed security scan report was found for this exact repository URL and commit hash. Re-run the scan before approving this submission.';
-        const template = await failureTemplate('Plugin Publish Rejected', scanError, runUrl);
+        const template = failureTemplate('Plugin Publish Rejected', scanError, runUrl);
         await updateComment(github, context, commentId, template);
 
         core.setOutput('should_proceed', 'false');
@@ -56,7 +56,7 @@ export const acknowledgePublishInitialization = async ({ github, context, core }
         return { should_proceed: false, comment_id: commentId.toString() };
     }
 
-    const template = await statusTemplate(payload, runUrl, 2, 'Approved submission validated. The untrusted build job is starting.');
+    const template = statusTemplate(payload, runUrl, 2, 'Approved submission validated. The untrusted build job is starting.');
     await updateComment(github, context, commentId, template);
 
     core.setOutput('plugin_name', payload.plugin_name);
@@ -84,17 +84,17 @@ export const updatePublishPhase = async (
     phase: number,
     details?: string,
 ) => {
-    const payload = await parsePayloadFromContext(context);
+    const payload = parsePayloadFromContext(context);
     const runUrl = runUrlFor(context);
     const body = payload
-        ? await statusTemplate(payload, runUrl, phase, details)
-        : await failureTemplate('Plugin Publish Status', details ?? 'Publish workflow is running.', runUrl);
+        ? statusTemplate(payload, runUrl, phase, details)
+        : failureTemplate('Plugin Publish Status', details ?? 'Publish workflow is running.', runUrl);
 
     await updateComment(github, context, commentId, body);
 };
 
 export const markPublishedPluginApproved = async (repoDir: string, artifactManifestFile: string) => {
-    const artifactManifest = await readJsonFromFile(artifactManifestFile);
+    const artifactManifest = await readJsonFromFile<PluginManifest>(artifactManifestFile);
     const pluginId = artifactManifest.id;
 
     if (!pluginId) {
@@ -103,8 +103,8 @@ export const markPublishedPluginApproved = async (repoDir: string, artifactManif
 
     const registryManifestFile = join(repoDir, 'plugins', pluginId, 'manifest.json');
     const manifestsFile = join(repoDir, 'manifests.json');
-    const registryManifest = await readJsonFromFile(registryManifestFile);
-    const manifests = await readJsonFromFile(manifestsFile);
+    const registryManifest = await readJsonFromFile<PluginManifest>(registryManifestFile);
+    const manifests = await readJsonFromFile<PluginRegistry>(manifestsFile);
 
     registryManifest._approved = true;
 
@@ -129,7 +129,7 @@ export const verifyPublishedRegistry = async (
     expectedRepositoryUrl: string,
     expectedCommitHash: string,
 ) => {
-    const artifactManifest = await readJsonFromFile(artifactManifestFile);
+    const artifactManifest = await readJsonFromFile<PluginManifest>(artifactManifestFile);
     const pluginId = artifactManifest.id;
     const pluginVersion = artifactManifest.version;
 
@@ -148,7 +148,7 @@ export const verifyPublishedRegistry = async (
         throw new Error(`Artifact repository_url does not match the approved issue payload for ${pluginId}.`);
     }
 
-    const publishedCommitHash = await commitHashFromPublishCommit(artifactManifest._publish_commit);
+    const publishedCommitHash = commitHashFromPublishCommit(artifactManifest._publish_commit);
     if (publishedCommitHash.toLowerCase() !== expectedCommitHash.toLowerCase()) {
         throw new Error(`Artifact _publish_commit does not match the approved commit for ${pluginId}.`);
     }
@@ -170,7 +170,7 @@ export const verifyPublishedRegistry = async (
         throw new Error(`Published plugin archive is missing: plugins/${pluginId}/plugin.jpl`);
     }
 
-    const registryManifest = await readJsonFromFile(registryManifestFile);
+    const registryManifest = await readJsonFromFile<PluginManifest>(registryManifestFile);
     if (registryManifest.id !== pluginId || registryManifest.version !== pluginVersion) {
         throw new Error(`Published registry manifest does not match artifact identity for ${pluginId}.`);
     }
@@ -188,7 +188,7 @@ export const verifyPublishedRegistry = async (
         throw new Error(`Published registry manifest repository_url does not match the approved issue payload for ${pluginId}.`);
     }
 
-    const manifests = await readJsonFromFile(manifestsFile);
+    const manifests = await readJsonFromFile<PluginRegistry>(manifestsFile);
     if (!manifests[pluginId]) {
         throw new Error(`manifests.json does not contain ${pluginId}.`);
     }
@@ -211,7 +211,11 @@ export const summarizePublishResult = async (
     readmeUpdated: string,
     statsUpdated: string,
 ) => {
-    const manifest = await readJsonFromFile(manifestFile);
+    const manifest = await readJsonFromFile<PluginManifest>(manifestFile);
+
+    if (!manifest.id || !manifest.version) {
+        throw new Error('Published manifest is missing id or version.');
+    }
     const pluginDirectory = join(repoDir, 'plugins', manifest.id);
     const pluginJplPath = join(pluginDirectory, 'plugin.jpl');
     const pluginManifestPath = join(pluginDirectory, 'manifest.json');
@@ -223,8 +227,8 @@ export const summarizePublishResult = async (
 
     const releaseUpdated = /\b(Uploading|Deleting old asset)\b/.test(releaseLog);
 
-    const isReadmeUpdated = await parseBoolean(readmeUpdated);
-    const isStatsUpdated = await parseBoolean(statsUpdated);
+    const isReadmeUpdated = parseBoolean(readmeUpdated);
+    const isStatsUpdated = parseBoolean(statsUpdated);
     const registryUpdated = (await fileExists(pluginJplPath)) && (await fileExists(pluginManifestPath));
 
     const summary: PublishSummary = {
@@ -246,16 +250,16 @@ export const finishPublish = async (
     commentId: string | number,
     summaryJson?: string | PublishSummary,
 ) => {
-    const payload = await parsePayloadFromContext(context);
-    const summary = await parseSummary(summaryJson);
+    const payload = parsePayloadFromContext(context);
+    const summary = parseSummary(summaryJson);
     const pluginLabel = summary.pluginId && summary.pluginVersion
         ? `${summary.pluginId}@${summary.pluginVersion}`
         : payload?.plugin_name ?? 'the plugin';
     const pluginDirectory = summary.pluginDirectory ?? (summary.pluginId ? `plugins/${summary.pluginId}` : 'plugins/');
     const runUrl = runUrlFor(context);
 
-    const escapedLabel = await escapeMarkdownText(pluginLabel);
-    const escapedDir = await escapeInlineCode(pluginDirectory);
+    const escapedLabel = escapeMarkdownText(pluginLabel);
+    const escapedDir = escapeInlineCode(pluginDirectory);
 
     const registryStatus = summary.registryUpdated ? 'updated' : 'not verified';
     const readmeStatus = summary.readmeUpdated ? 'updated' : 'no file change detected';
@@ -269,9 +273,9 @@ export const finishPublish = async (
 * GitHub release assets: ${releaseStatus}
 * stats.json: ${statsStatus}`;
 
-    const escapedUrl = await escapeMarkdownUrl(runUrl);
+    const escapedUrl = escapeMarkdownUrl(runUrl);
     const body = payload
-        ? await statusTemplate(payload, runUrl, 7, details)
+        ? statusTemplate(payload, runUrl, 7, details)
         : `# Plugin Published Successfully\n\n${details}\n\n**Workflow Run:** [View Logs](${escapedUrl})`;
 
     await updateComment(github, context, commentId, body);
@@ -291,9 +295,9 @@ export const handleWorkflowFailure = async (
     message = 'The publish workflow encountered an error. Check the workflow logs for details.',
 ) => {
     const runUrl = runUrlFor(context);
-    const body = await failureTemplate('Plugin Publish Failed', message, runUrl);
+    const body = failureTemplate('Plugin Publish Failed', message, runUrl);
 
-    if (commentId) {
+    if (commentId !== undefined) {
         await updateComment(github, context, commentId, body);
         return;
     }

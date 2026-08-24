@@ -1,12 +1,7 @@
-import { appendFile, readFile, readdir, stat } from 'node:fs/promises';
+import { appendFile, readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Finding } from '../types/regressionTypes';
-
-const requiredEnvironmentValue = (name: string) => {
-    const value = process.env[name];
-    if (!value) throw new Error(`${name} is required.`);
-    return value;
-};
+import { requiredEnvironmentValue } from '../utils/utils';
 
 const isFinding = (value: unknown): value is Finding => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -18,11 +13,11 @@ const isFinding = (value: unknown): value is Finding => {
         && typeof finding.line === 'string';
 };
 
-const markdownTableCell = (value: string) => {
+const markdownTableCell = (value: string): string => {
     return value.replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|');
 };
 
-const findingsTable = (findings: Finding[]) => {
+const findingsTable = (findings: Finding[]): string => {
     const rows = findings.map(finding => {
         return `| ${markdownTableCell(finding.plugin)} | ${markdownTableCell(finding.ruleId)} | ${markdownTableCell(finding.file)} | ${markdownTableCell(finding.line)} |`;
     });
@@ -34,14 +29,30 @@ const findingsTable = (findings: Finding[]) => {
     ].join('\n');
 };
 
-const appendStepSummary = async (content: string, summaryPath = process.env.GITHUB_STEP_SUMMARY) => {
+const appendStepSummary = async (content: string, summaryPath = process.env.GITHUB_STEP_SUMMARY): Promise<void> => {
     if (!summaryPath) {
         throw new Error('GITHUB_STEP_SUMMARY is not set; cannot write the regression result to the Actions summary.');
     }
     await appendFile(summaryPath, `${content.trimEnd()}\n\n`, 'utf8');
 };
 
-const main = async () => {
+const findJsonFiles = async (dir: string): Promise<string[]> => {
+    const files: string[] = [];
+
+    for (const item of await readdir(dir, { withFileTypes: true })) {
+        const fullPath = join(dir, item.name);
+
+        if (item.isDirectory()) {
+            files.push(...await findJsonFiles(fullPath));
+        } else if (item.isFile() && item.name === 'findings.json') {
+            files.push(fullPath);
+        }
+    }
+
+    return files.sort();
+};
+
+const main = async (): Promise<void> => {
     try {
         const artifactsDir = process.env.ARTIFACTS_DIR || resolve('findings');
         const expectedPluginCount = Number.parseInt(requiredEnvironmentValue('EXPECTED_PLUGIN_COUNT'), 10);
@@ -62,20 +73,6 @@ const main = async () => {
             incompleteReasons.push(`The findings artifact download result was ${downloadOutcome}, not success.`);
         }
 
-        // Search recursively for findings.json files
-        const findJsonFiles = async (dir: string): Promise<string[]> => {
-            let files: string[] = [];
-            for (const item of await readdir(dir)) {
-                const fullPath = join(dir, item);
-                if ((await stat(fullPath)).isDirectory()) {
-                    files = files.concat(await findJsonFiles(fullPath));
-                } else if (item === 'findings.json') {
-                    files.push(fullPath);
-                }
-            }
-            return files;
-        };
-
         let jsonFiles: string[] = [];
         try {
             jsonFiles = await findJsonFiles(artifactsDir);
@@ -95,8 +92,7 @@ const main = async () => {
                     throw new Error('The file must contain an array of valid findings.');
                 }
 
-                const data = parsed as Finding[];
-                allFindings.push(...data);
+                allFindings.push(...parsed);
             } catch (error) {
                 const details = error instanceof Error ? error.message : String(error);
                 incompleteReasons.push(`Could not parse ${file}: ${details}`);
@@ -122,12 +118,13 @@ const main = async () => {
             }
 
             await appendStepSummary(summary.join('\n'));
-            process.exit(1);
+            process.exitCode = 1;
+            return;
         }
 
         if (allFindings.length === 0) {
             await appendStepSummary('## CodeQL regression scan passed\n\nNo findings were reported across all tested plugins.');
-            process.exit(0);
+            return;
         }
 
         const table = [
@@ -139,11 +136,11 @@ const main = async () => {
         ].join('\n');
 
         await appendStepSummary(table);
-        process.exit(1);
+        process.exitCode = 1;
 
     } catch (error) {
         console.error('Aggregation failed:', error);
-        process.exit(1);
+        process.exitCode = 1;
     }
 };
 

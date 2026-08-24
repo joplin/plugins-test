@@ -1,72 +1,24 @@
-import { access, readFile } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import type {
     FinalReportInput,
     FinalReportResult,
-    GithubActionContext,
     PhaseMap,
     ReportMetadata,
     SarifReport,
     SarifRule,
     SarifResult,
 } from '../types/types';
+import { buildPhaseMap, escapeInlineCode, escapeMarkdownText, escapeMarkdownUrl, fileExists, toRepoRelativeFile } from '../utils/utils';
 
 const phaseCount = 5;
-const targetPluginPathMarker = '/target-plugin/';
-
-const fileExists = async (path: string) => {
-    try {
-        await access(path);
-        return true;
-    } catch {
-        return false;
-    }
-};
-
-const escapeMarkdownText = (value: string) => {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-};
-
-const escapeInlineCode = (value: string) => {
-    return value.replace(/`/g, '\\`');
-};
-
-const escapeMarkdownUrl = (value: string) => {
-    return value.replace(/\(/g, '%28').replace(/\)/g, '%29');
-};
-
-const statusLabel = (phase: number, currentPhase: number) => {
-    if (phase < currentPhase) return '✅';
-    if (phase === currentPhase) return '⏳';
-    return '⚪';
-};
-
-// Give the url of current workflow run in actions tab 
-export const runUrlFor = (context: GithubActionContext) => {
-    return `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-};
 
 // Get the phase status 
-export const getPhases = (currentPhase: number) => {
-    const phases: PhaseMap = {};
-
-    for (let phase = 1; phase <= phaseCount; phase++) {
-        phases[phase] = statusLabel(phase, currentPhase);
-    }
-
-    if (currentPhase > phaseCount) {
-        for (let phase = 1; phase <= phaseCount; phase++) {
-            phases[phase] = '✅';
-        }
-    }
-
-    return phases;
+export const getPhases = (currentPhase: number): PhaseMap => {
+    return buildPhaseMap(currentPhase, phaseCount);
 };
 
 // Creates the comment template that helps us track what Phase is currently going on 
-export const statusTemplate = (repoUrl: string, commitHash: string, runUrl: string, phases: PhaseMap | null, isUpdate?: boolean) => {
+export const statusTemplate = (repoUrl: string, commitHash: string, runUrl: string, phases: PhaseMap | null, isUpdate?: boolean): string => {
     const targetText = escapeMarkdownText(`${repoUrl}/tree/${commitHash}`);
     const targetUrl = escapeMarkdownUrl(`${repoUrl}/tree/${commitHash}`);
     const workflowRunUrl = escapeMarkdownUrl(runUrl);
@@ -110,29 +62,12 @@ export const extractReportMetadata = (body: string): ReportMetadata => {
     };
 };
 
-// Removes any leading path data like : `home/../test-plugin/src/index.ts 
-// To : src/index.ts
-const toRepoRelativeFile = (uri: string) => {
-    const normalized = uri.replace(/\\/g, '/');
-    const markerIndex = normalized.indexOf(targetPluginPathMarker);
-
-    if (markerIndex >= 0) {
-        return normalized.slice(markerIndex + targetPluginPathMarker.length);
-    }
-
-    if (normalized.startsWith('target-plugin/')) {
-        return normalized.slice('target-plugin/'.length);
-    }
-
-    return normalized.replace(/^\/+/, '');
-};
-
 const toGitHubBlobUrl = (repoUrl: string, commitHash: string, file: string, line: number) => {
     const filePath = file.split('/').map(encodeURIComponent).join('/');
     return `${repoUrl}/blob/${commitHash}/${filePath}#L${line}`;
 };
 
-const readSarif = async (sarifPath: string) => {
+const readSarif = async (sarifPath: string): Promise<SarifReport> => {
     const parsed: unknown = JSON.parse(await readFile(sarifPath, 'utf8'));
 
     if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as SarifReport).runs)) {
@@ -182,14 +117,16 @@ const findRule = (sarif: SarifReport, ruleId: string) => {
 // Find the severity of the result 
 // If failed to get an severity defaults to 'warning'
 const getSeverityLevel = (rule: SarifRule | null) => {
-    let severityLevel = rule?.defaultConfiguration?.level;
+    const configuredLevel = rule?.defaultConfiguration?.level;
+    if (configuredLevel) return configuredLevel;
 
-    if (!severityLevel && rule?.properties?.['problem.severity']) {
-        severityLevel = rule.properties['problem.severity'] === 'error' ? 'error' :
-            rule.properties['problem.severity'] === 'warning' ? 'warning' : 'warning';
-    }
+    return rule?.properties?.['problem.severity'] === 'error' ? 'error' : 'warning';
+};
 
-    return severityLevel ?? 'warning';
+const severityRank = (severityLevel: string) => {
+    if (severityLevel === 'error') return 0;
+    if (severityLevel === 'warning') return 1;
+    return 2;
 };
 
 const severityIcon = (rule: SarifRule | null) => {
@@ -298,11 +235,7 @@ export const renderFinalReport = async ({
         const levelA = getSeverityLevel(ruleA);
         const levelB = getSeverityLevel(ruleB);
 
-        if (levelA === 'error' && levelB !== 'error') return -1;
-        if (levelA !== 'error' && levelB === 'error') return 1;
-        if (levelA === 'warning' && levelB !== 'warning' && levelB !== 'error') return -1;
-        if (levelA !== 'warning' && levelA !== 'error' && levelB === 'warning') return 1;
-        return 0;
+        return severityRank(levelA) - severityRank(levelB);
     });
 
     const findings = sortedResults.map(result => renderSarifFinding(sarif, result, repoUrl, commitHash)).join('');

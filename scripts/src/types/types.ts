@@ -1,6 +1,53 @@
-export type GithubClient = any;
-export type GithubActionContext = any;
-export type GithubActionCore = any;
+export interface GithubIssueComment {
+    body?: string | null;
+}
+
+export interface GithubIssueCommentResponse {
+    data: {
+        id: number;
+        body: string;
+    };
+}
+
+export interface GithubClient {
+    rest: {
+        issues: {
+            createComment: (input: Record<string, unknown>) => Promise<GithubIssueCommentResponse>;
+            getComment: (input: Record<string, unknown>) => Promise<GithubIssueCommentResponse>;
+            listComments: unknown;
+            update: (input: Record<string, unknown>) => Promise<unknown>;
+            updateComment: (input: Record<string, unknown>) => Promise<GithubIssueCommentResponse>;
+        };
+    };
+    paginate: (method: unknown, input: Record<string, unknown>) => Promise<GithubIssueComment[]>;
+}
+
+export interface GithubActionContext {
+    serverUrl?: string;
+    runId: number | string;
+    repo: {
+        owner: string;
+        repo: string;
+    };
+    issue: {
+        number: number;
+    };
+    payload: {
+        issue: {
+            body?: string | null;
+            title?: string | null;
+        };
+    };
+}
+
+export interface GithubActionCore {
+    setOutput: (name: string, value: unknown) => void;
+    setFailed: (message: string) => void;
+}
+
+export interface WorkflowFailureResult {
+    should_proceed: false;
+}
 
 export interface GithubApiContext {
     github: GithubClient;
@@ -18,6 +65,11 @@ export interface SubmissionPayload {
     version: string;
     repository_url: string;
     commit_hash: string;
+}
+
+export interface GithubRepository {
+    canonicalUrl: string;
+    repoName: string;
 }
 
 export interface ValidationSuccess {

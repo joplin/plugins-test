@@ -4,29 +4,16 @@ import {
     extractReportMetadata,
     getPhases,
     renderFinalReport,
-    runUrlFor,
     statusTemplate,
 } from './scanReport';
 import type {
     GithubApiContext,
     GithubContext,
 } from '../types/types';
-import { updateComment, failWithIssueComment, rejectWithIssueComment } from '../utils/github';
-import { parseIssuePayload } from '../utils/payload';
-import { fileExists } from '../utils/utils';
-
-const canonicalRepositoryUrl = (url: string) => {
-    return url.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
-};
-
-const normalizeUrl = (url: string) => {
-    return canonicalRepositoryUrl(url).toLowerCase();
-};
-
-const repoNameFromUrl = (repositoryUrl: string) => {
-    const urlParts = normalizeUrl(repositoryUrl).split('/');
-    return urlParts.slice(-2).join('/');
-};
+import type { PluginManifest, PluginRegistry } from '../types/publishTypes';
+import { runUrlFor, updateComment, failWithIssueComment, rejectWithIssueComment } from '../utils/github';
+import { normalizeRepositoryUrl, parseGithubRepository, parseIssuePayload } from '../utils/payload';
+import { fileExists, getRegistryPath, readJsonFromFile } from '../utils/utils';
 
 const validateTitle = (title: string | null | undefined, pluginName: string, version: string) => {
     const expectedTitle = `[Plugin Submission] ${pluginName} v${version}`;
@@ -68,29 +55,13 @@ export const legacyRepositoryMigrationError = (
     return '';
 };
 
-// Gets the path to manifest.json
-const getRegistryPath = async (relativePath: string) => {
-    const workspace = process.env.GITHUB_WORKSPACE;
-    const candidates = [
-        workspace ? resolve(workspace, 'plugins-test', relativePath) : '',
-        resolve(process.cwd(), 'plugins-test', relativePath),
-        resolve(process.cwd(), relativePath),
-        resolve(__dirname, '..', '..', relativePath),
-    ].filter(Boolean);
-
-    for (const candidate of candidates) {
-        if (await fileExists(candidate)) return candidate;
-    }
-    return candidates[0];
-};
-
 // checks if the plugin already exists in the manifest.json
-const existingPluginFor = async (pluginId: string) => {
+const existingPluginFor = async (pluginId: string): Promise<PluginManifest | null> => {
     const manifestsPath = await getRegistryPath('manifests.json');
 
     if (!(await fileExists(manifestsPath))) return null;
 
-    const manifests = JSON.parse(await readFile(manifestsPath, 'utf8'));
+    const manifests = await readJsonFromFile<PluginRegistry>(manifestsPath);
 
     return manifests[pluginId] ?? null;
 };
@@ -146,6 +117,17 @@ export const initialize = async ({ github, context, core }: GithubContext) => {
     }
 
     const { plugin_name, version, repository_url, commit_hash } = validation.payload;
+    const repository = parseGithubRepository(repository_url);
+
+    if (!repository) {
+        return await failWithIssueComment(
+            { github, context, core },
+            initialCommentId,
+            'Security Scan Failed',
+            `Validated repository URL could not be parsed: ${repository_url}`,
+        );
+    }
+
     const titleError = validateTitle(context.payload.issue.title, plugin_name, version);
 
     if (titleError) {
@@ -175,7 +157,7 @@ export const initialize = async ({ github, context, core }: GithubContext) => {
             body: commentBody,
         });
 
-    const repoName = repoNameFromUrl(repository_url);
+    const repoName = repository.repoName;
 
     core.setOutput('repository_url', repository_url);
     core.setOutput('version', version);
@@ -297,8 +279,8 @@ export const validateTargetRepository = async (
             const manifestRepo = manifest.repository_url;
             if (manifestRepo) {
                 const rawManifestUrl = manifestRepo;
-                const normalizedManifestUrl = normalizeUrl(rawManifestUrl);
-                const normalizedPayloadUrl = normalizeUrl(repository_url);
+                const normalizedManifestUrl = normalizeRepositoryUrl(rawManifestUrl);
+                const normalizedPayloadUrl = normalizeRepositoryUrl(repository_url);
 
                 if (normalizedManifestUrl && normalizedPayloadUrl && normalizedManifestUrl !== normalizedPayloadUrl) {
                     return await rejectWithIssueComment(
@@ -322,7 +304,7 @@ export const validateTargetRepository = async (
                         );
                     }
 
-                    if (registeredUrl && normalizeUrl(registeredUrl) !== normalizeUrl(repository_url)) {
+                    if (registeredUrl && normalizeRepositoryUrl(registeredUrl) !== normalizeRepositoryUrl(repository_url)) {
                         await closeOwnershipMismatchIssue(
                             { github, context, core },
                             parseInt(commentId, 10),
