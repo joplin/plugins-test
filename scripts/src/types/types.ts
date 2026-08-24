@@ -45,10 +45,6 @@ export interface GithubActionCore {
     setFailed: (message: string) => void;
 }
 
-export interface WorkflowFailureResult {
-    should_proceed: false;
-}
-
 export interface GithubApiContext {
     github: GithubClient;
     context: GithubActionContext;
@@ -67,11 +63,6 @@ export interface SubmissionPayload {
     commit_hash: string;
 }
 
-export interface GithubRepository {
-    canonicalUrl: string;
-    repoName: string;
-}
-
 export interface ValidationSuccess {
     ok: true;
     payload: SubmissionPayload;
@@ -86,13 +77,6 @@ export type ValidationResult = ValidationSuccess | ValidationFailure;
 
 export type PhaseMap = Record<number, string>;
 
-export interface ReportMetadata {
-    repoUrl: string;
-    commitHash: string;
-    runUrl: string;
-    isUpdate?: boolean;
-}
-
 export interface FinalReportInput {
     sarifPath: string;
     repoUrl: string;
@@ -100,12 +84,6 @@ export interface FinalReportInput {
     runUrl: string;
     analysisOutcome: string;
     isUpdate?: boolean;
-}
-
-export interface FinalReportResult {
-    ok: boolean;
-    body: string;
-    error?: string;
 }
 
 export interface SarifMessage {
